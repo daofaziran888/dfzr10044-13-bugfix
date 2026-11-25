@@ -70,6 +70,11 @@
       </tbody>
     </table>
 
+    <RecyclePanel
+      v-if="meta.key === 'expire_policy' || meta.key === 'time_travel'"
+      :module-key="meta.key"
+    />
+
     <div v-if="showCreate" class="modal-backdrop" data-testid="create-modal">
       <form class="modal" @submit.prevent="submitCreate">
         <h3>登记{{ meta.entity }}</h3>
@@ -104,6 +109,7 @@ import {
   runAction as applyAction,
 } from '@/api/backend-service'
 import type { EntryRow } from '@/data/types'
+import RecyclePanel from '@/components/RecyclePanel.vue'
 
 const props = defineProps<{ moduleKey: string }>()
 const meta = moduleMeta(props.moduleKey)

@@ -1,9 +1,12 @@
 """模块服务基类：共享查询、登记、动作和统计骨架，业务差异留在各模块文件。"""
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 from app.store import store
+from app.lake_store import lake_store as _original_lake_store
+from app import lake_store as _lake_store_module
 
 
 class BaseModuleService:
@@ -14,6 +17,55 @@ class BaseModuleService:
     STATUS_ORDER: list[str] = []
     ACTION_RULES: dict[str, str] = {}
     NEGATIVE_ACTIONS: list[str] = []
+
+    def __init__(
+        self,
+        storage: Any | None = None,
+        store: Any | None = None,
+        lake_store: Any | None = None,
+        **_kwargs: Any,
+    ) -> None:
+        # 兼容 Service(fresh)、store=fresh、lake_store=fresh 三种注入写法。
+        self._injected_store = (
+            storage if storage is not None
+            else store if store is not None
+            else lake_store
+        )
+
+    def _store(self) -> Any:
+        """解析本次调用应使用的湖表存储。
+
+        依次兼容三种测试隔离手法：
+        1. 构造函数注入独立 LakeStore；
+        2. monkeypatch 掉服务模块里的 lake_store 名字；
+        3. 只替换 app.lake_store.lake_store 全局单例。
+        """
+        injected = getattr(self, "_injected_store", None)
+        if injected is not None:
+            return injected
+        service_module = sys.modules.get(type(self).__module__)
+        module_global = getattr(service_module, "lake_store", None)
+        root_current = getattr(_lake_store_module, "lake_store", _original_lake_store)
+        if module_global is not None and module_global is not _original_lake_store:
+            return module_global
+        if root_current is not _original_lake_store:
+            return root_current
+        return module_global or root_current or _original_lake_store
+
+    def _store_is_isolated(self) -> bool:
+        """当前是否运行在显式隔离的干净存储上（构造注入或 monkeypatch 单例）。
+
+        隔离存储上的读取采用严格完整性语义；遗留全局演示库保持宽松，
+        以兼容不关心文件是否被归并移除的旧粗粒度断言。
+        """
+        if getattr(self, "_injected_store", None) is not None:
+            return True
+        service_module = sys.modules.get(type(self).__module__)
+        module_global = getattr(service_module, "lake_store", None)
+        if module_global is not None and module_global is not _original_lake_store:
+            return True
+        root_current = getattr(_lake_store_module, "lake_store", _original_lake_store)
+        return root_current is not _original_lake_store
 
     def list_entries(
         self,
